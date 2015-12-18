@@ -34,10 +34,9 @@ def tokenizer(text, pat, skip_sw=True):
         if not skip_sw or tok.tok != 'WS':
             yield tok
 
-test_expr = r"a=1+3*(4-5*(2+3)); b=a+3;"
-tokens = list(tokenizer(test_expr, expr_pat))
-
-print(tokens)
+#test_expr = r"a=1+3*(4-5*(2+3)); b=a+3;"
+#tokens = list(tokenizer(test_expr, expr_pat))
+#print(tokens)
 
 class ExpressionEvaluator():
 
@@ -46,46 +45,59 @@ class ExpressionEvaluator():
         self.nexttok = None
         self.expr = expr
         self.lexer = tokenizer(self.expr, expr_pat)
+        self._advance()
         return self.expr_parse()
 
+    def _advance(self):
+        self.tok, self.nexttok = self.nexttok, next(self.lexer, None)
+
     def _accept(self, tok):
-        if self.tok.tok == tok:
-            self.tok = self.nexttok
-            self.nexttok = next(self.lexer)
-            return self.tok.val
+        if self.nexttok and self.nexttok.tok == tok:
+            self._advance()
+            return True
+        return False
 
     def _expect(self, tok):
-        self.tok = next(self.lexer)
-        self.toktok = next(self.lexer)
-        if self.tok.tok == tok:
-            return self._accept(tok)
-        else:
-            raise SyntaxError("Expecting a token: {}".format(tok.tok))
+        if not self._accept(tok):
+            raise SyntaxError("Expecting a token: {}".format(tok))
 
     def expr_parse(self):
         expr_val = self.term_parse()
 
-        if self._accept('PLUS'):
-            expr_val += self.term_parse()
-            return expr_val
-        if self._accept('MINUS'):
-            expr_val -= self.term_parse()
-            return expr_val
+        while self._accept('MINUS') or self._accept('PLUS'):
+            tok = self.tok.tok
+            op = self.term_parse()
+            if tok == 'PLUS':
+                expr_val += op
+            elif tok == 'MINUS':
+                expr_val -= op
+
+        return expr_val
 
     def term_parse(self):
         term_val = self.factor_parse()
 
-        if self._accept('MULT'):
-            term_val *= self.factor_parse()
-            return term_val
-        if self._accept('DIV'):
-            term_val -= self.factor_parse()
-            return term_val
+        while self._accept('MULT') or self._accept('DIV'):
+            tok = self.tok.tok
+            op = self.factor_parse()
+            if tok == 'MULT':
+                term_val *= op
+            elif tok == 'DIV':
+                term_val /= op
+
+        return term_val
 
     def factor_parse(self):
-        return self._expect('NUM')
+        if self._accept('NUM'):
+            return int(self.tok.val)
+        elif self._accept('LPAR'):
+            expr = self.expr_parse()
+            self._expect('RPAR')
+            return expr
+        else:
+            raise SyntaxError("Expecting NUM or LPAR")
 
 parser = ExpressionEvaluator()
-print(parser.parse("1+2"))
+print(parser.parse("4*(5+3)+2*3"))
 
 
