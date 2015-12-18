@@ -16,7 +16,7 @@ MINUS = r"(?P<MINUS>-)"
 MULT = r"(?P<MULT>\*)"
 DIV = r"(?P<DIV>/)"
 NUM = r"(?P<NUM>[0-9]+)"
-VAR = r"(?P<VAR>[a-zA-Z][_a-zA-Z0-9]*)"
+VAR = r"(?P<VAR>[_a-zA-Z][_a-zA-Z0-9]*)"
 EQ = r"(?P<EQ>=)"
 SEMICOL = r"(?P<SEMICOL>;)"
 LPAR = r"(?P<LPAR>\()"
@@ -38,18 +38,30 @@ def tokenizer(text, pat, skip_sw=True):
 #tokens = list(tokenizer(test_expr, expr_pat))
 #print(tokens)
 
-class ExpressionEvaluator():
 
+class ExpressionEvaluator():
+    """Parser for simple arithmetic expressions:
+    prog:=stm+
+    stm:=; | VAR; | VAR=expr; | expr;
+    expr:= term {(+|-)term}*;
+    term:= factor {(*|/)factor}*
+    factor:= NUM | VAR | (expr)
+    """
     def parse(self, expr):
         self.tok = None
         self.nexttok = None
+        self.nextnexttok = None
         self.expr = expr
+        self.scope = '_'
+        self.symtab = {}
+        self.symtab[self.scope] = {}
         self.lexer = tokenizer(self.expr, expr_pat)
         self._advance()
-        return self.expr_parse()
+        return self.prog_parse()
 
     def _advance(self):
-        self.tok, self.nexttok = self.nexttok, next(self.lexer, None)
+        self.tok, self.nexttok, self.nextnexttok = self.nexttok, self.nextnexttok, next(self.lexer, None)
+        print("tok: {}, nexttok: {}".format(self.tok.tok if self.tok else 'None', self.nexttok.tok if self.nexttok else 'None'))
 
     def _accept(self, tok):
         if self.nexttok and self.nexttok.tok == tok:
@@ -60,6 +72,54 @@ class ExpressionEvaluator():
     def _expect(self, tok):
         if not self._accept(tok):
             raise SyntaxError("Expecting a token: {}".format(tok))
+
+    def _get_var(self, var):
+        if var in self.symtab[self.scope]:
+            return self.symtab[self.scope][var]
+        else:
+            raise SyntaxError("Unknown variable: " + var)
+
+    def _put_var(self, var, val):
+        self.symtab[self.scope][var] = int(val)
+
+    def prog_parse(self):
+        while self.stm_parse():
+            print('Statement')
+            pass
+
+    def stm_parse(self):
+        if self._accept('SEMICOL'):
+            print("Empty statement detected")
+            return True
+        elif self.nexttok is not None:
+            # Perform LA-1
+            print("LA-1 result: ", self.nextnexttok.tok)
+            if self.nextnexttok.tok == 'EQ':
+                # Assignment statement
+                print("Assignment statement detected")
+                self._expect('VAR')
+                var = self.tok.val
+                self._expect('EQ')
+                exprval = self.expr_parse()
+                self._put_var(var, exprval)
+                self._expect('SEMICOL')
+                return True
+            elif self.nextnexttok.tok == 'SEMICOL':
+                print("Print var statement detected")
+                self._expect('VAR')
+                var = self.tok.val
+                val = self._get_var(var)
+                print("{} = {}".format(var, val))
+                self._expect('SEMICOL')
+                return True
+            else:
+                print("Expression statement detected")
+                exprval = self.expr_parse()
+                self._put_var('_', exprval)
+                self._expect('SEMICOL')
+                return True
+        else:
+            return False
 
     def expr_parse(self):
         expr_val = self.term_parse()
@@ -90,6 +150,12 @@ class ExpressionEvaluator():
     def factor_parse(self):
         if self._accept('NUM'):
             return int(self.tok.val)
+        elif self._accept('VAR'):
+            var = self.tok.val
+            if var in self.symtab[self.scope]:
+                return self.symtab[self.scope][var]
+            else:
+                raise SyntaxError("Unknown variable: {}".format(var))
         elif self._accept('LPAR'):
             expr = self.expr_parse()
             self._expect('RPAR')
@@ -98,6 +164,6 @@ class ExpressionEvaluator():
             raise SyntaxError("Expecting NUM or LPAR")
 
 parser = ExpressionEvaluator()
-print(parser.parse("4*(5+3)+2*3"))
+parser.parse("4*(5);;(1+3)+2*3;_+3+_+3;_;")
 
 
